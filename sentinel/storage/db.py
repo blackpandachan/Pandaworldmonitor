@@ -152,7 +152,7 @@ class SentinelDB:
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 """
-                SELECT id, title, url, source, source_tier, published_at, classification_json
+                SELECT id, title, url, source, source_tier, published_at, classification_json, location_json
                 FROM articles WHERE published_at >= ?
                 ORDER BY published_at DESC LIMIT ?
                 """,
@@ -170,6 +170,7 @@ class SentinelDB:
                     "source_tier": r[4],
                     "published_at": r[5],
                     "classification": json.loads(r[6]) if r[6] else None,
+                    "location": json.loads(r[7]) if r[7] else None,
                 }
             )
         return out
@@ -229,6 +230,61 @@ class SentinelDB:
             )
             await db.commit()
 
+
+
+    async def get_recent_conflict_events(self, hours_back: int = 24, limit: int = 500) -> list[dict]:
+        cutoff = datetime.fromtimestamp(datetime.now(UTC).timestamp() - (hours_back * 3600), tz=UTC).isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT id, event_type, country, latitude, longitude, occurred_at, fatalities, source, admin1
+                FROM conflict_events WHERE occurred_at >= ?
+                ORDER BY occurred_at DESC LIMIT ?
+                """,
+                (cutoff, limit),
+            )
+            rows = await cursor.fetchall()
+        return [
+            {
+                "id": r[0],
+                "event_type": r[1],
+                "country": r[2],
+                "latitude": r[3],
+                "longitude": r[4],
+                "occurred_at": r[5],
+                "fatalities": r[6],
+                "source": r[7],
+                "admin1": r[8],
+            }
+            for r in rows
+        ]
+
+    async def get_recent_natural_events(self, hours_back: int = 24, limit: int = 500) -> list[dict]:
+        cutoff = datetime.fromtimestamp(datetime.now(UTC).timestamp() - (hours_back * 3600), tz=UTC).isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT id, event_type, title, latitude, longitude, occurred_at, magnitude, source
+                FROM natural_events WHERE occurred_at >= ?
+                ORDER BY occurred_at DESC LIMIT ?
+                """,
+                (cutoff, limit),
+            )
+            rows = await cursor.fetchall()
+        return [
+            {
+                "id": r[0],
+                "event_type": r[1],
+                "title": r[2],
+                "latitude": r[3],
+                "longitude": r[4],
+                "occurred_at": r[5],
+                "magnitude": r[6],
+                "source": r[7],
+            }
+            for r in rows
+        ]
+
     async def search_articles(self, query: str, days_back: int = 7) -> list[dict]:
         cutoff = (datetime.now(UTC)).timestamp() - days_back * 86400
         cutoff_iso = datetime.fromtimestamp(cutoff, tz=UTC).isoformat()
@@ -287,4 +343,47 @@ class SentinelDB:
             "brief_text": row[3],
             "model": row[4],
             "generated_at": row[5],
+        }
+
+    async def list_briefs(self, limit: int = 20, brief_type: str | None = None) -> list[dict]:
+        query = "SELECT id, type, region, country, brief_text, model, generated_at FROM briefs"
+        params: list = []
+        if brief_type:
+            query += " WHERE type = ?"
+            params.append(brief_type)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(query, tuple(params))
+            rows = await cursor.fetchall()
+        return [
+            {
+                "id": row[0],
+                "type": row[1],
+                "region": row[2],
+                "country": row[3],
+                "brief_text": row[4],
+                "model": row[5],
+                "generated_at": row[6],
+            }
+            for row in rows
+        ]
+
+    async def get_brief_by_id(self, brief_id: int) -> dict | None:
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, type, region, country, brief_text, model, generated_at FROM briefs WHERE id = ?",
+                (brief_id,),
+            )
+            row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "type": row[1],
+            "region": row[2],
+            "country": row[3],
+            "brief_text": row[4],
+            "model": row[5],
+            "generated_at": row[6],
         }

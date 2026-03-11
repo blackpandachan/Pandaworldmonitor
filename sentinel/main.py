@@ -18,6 +18,8 @@ from sentinel.tools.intelligence import (
     detect_convergence,
     generate_delta_brief,
     generate_situation_brief,
+    list_brief_history,
+    compare_briefs,
 )
 from sentinel.tools.natural import fetch_natural_events
 from sentinel.tools.news import fetch_news, search_news_archive
@@ -117,6 +119,16 @@ async def mcp_check_watchlist_alerts() -> list[dict]:
 @mcp.tool()
 async def mcp_get_map_layer_data(layers: list[str], hours_back: int = 24) -> dict:
     return await get_map_layer_data(layers=layers, hours_back=hours_back, db=app.state.db, cache=app.state.cache)
+
+
+@mcp.tool()
+async def mcp_list_brief_history(brief_type: str | None = None, limit: int = 20) -> list[dict]:
+    return await list_brief_history(db=app.state.db, brief_type=brief_type, limit=limit)
+
+
+@mcp.tool()
+async def mcp_compare_briefs(first_id: int, second_id: int) -> dict:
+    return await compare_briefs(db=app.state.db, first_id=first_id, second_id=second_id)
 
 
 @mcp.tool()
