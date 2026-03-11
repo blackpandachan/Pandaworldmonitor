@@ -1,0 +1,6 @@
+[
+  {"name": "Reuters World", "url": "https://www.reutersagency.com/feed/?best-topics=world&post_type=best", "tier": 1},
+  {"name": "BBC World", "url": "https://feeds.bbci.co.uk/news/world/rss.xml", "tier": 2},
+  {"name": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml", "tier": 2},
+  {"name": "Guardian World", "url": "https://www.theguardian.com/world/rss", "tier": 2}
+]
