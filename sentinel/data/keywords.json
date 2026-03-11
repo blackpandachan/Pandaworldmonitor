@@ -1,0 +1,11 @@
+{
+  "exclude": ["protein", "recipe", "celebrity", "movie", "sports"],
+  "rules": [
+    {"keyword": "missile strike", "severity": "high", "category": "conflict", "confidence": 0.8},
+    {"keyword": "invasion", "severity": "critical", "category": "conflict", "confidence": 0.9},
+    {"keyword": "earthquake", "severity": "high", "category": "disaster", "confidence": 0.8},
+    {"keyword": "protest", "severity": "medium", "category": "protest", "confidence": 0.7},
+    {"keyword": "coup", "severity": "critical", "category": "political", "confidence": 0.9},
+    {"keyword": "cyberattack", "severity": "high", "category": "cyber", "confidence": 0.8}
+  ]
+}
