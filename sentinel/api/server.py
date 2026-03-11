@@ -1,10 +1,17 @@
-from fastapi import APIRouter, Request
+import asyncio
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
 from sentinel.tools.conflict import fetch_conflict_events
-from sentinel.tools.dashboard import get_dashboard_state
+from sentinel.tools.dashboard import get_dashboard_state, get_map_layer_data
 from sentinel.tools.gdelt import fetch_gdelt_events
 from sentinel.tools.infrastructure import fetch_infrastructure_status
-from sentinel.tools.intelligence import compute_risk_scores, generate_delta_brief, generate_situation_brief
+from sentinel.tools.intelligence import (
+    compare_briefs,
+    compute_risk_scores,
+    generate_delta_brief,
+    generate_situation_brief,
+    list_brief_history,
+)
 from sentinel.tools.natural import fetch_natural_events
 from sentinel.tools.news import fetch_news, search_news_archive
 from sentinel.tools.watchlist import check_watchlist_alerts, manage_watchlist
@@ -70,12 +77,55 @@ async def brief_delta(request: Request, hours_back: int = 6, region: str | None 
     return await generate_delta_brief(hours_back=hours_back, region=region, db=request.app.state.db)
 
 
+@router.get("/brief/history")
+async def brief_history(request: Request, brief_type: str | None = None, limit: int = 20) -> list[dict]:
+    return await list_brief_history(db=request.app.state.db, brief_type=brief_type, limit=limit)
+
+
+@router.get("/brief/compare")
+async def brief_compare(request: Request, first_id: int, second_id: int) -> dict:
+    return await compare_briefs(db=request.app.state.db, first_id=first_id, second_id=second_id)
+
+
 @router.get("/risk-scores")
 async def risk_scores(request: Request, countries: str | None = None) -> list[dict]:
     parsed = countries.split(",") if countries else None
     return await compute_risk_scores(countries=parsed, db=request.app.state.db)
 
 
+
+
+@router.get("/map/layers")
+async def map_layers(request: Request, layers: str = "conflicts,natural,news", hours_back: int = 24) -> dict:
+    parsed_layers = [layer.strip() for layer in layers.split(",") if layer.strip()]
+    return await get_map_layer_data(layers=parsed_layers, hours_back=hours_back, db=request.app.state.db, cache=request.app.state.cache)
+
+
 @router.get("/dashboard/state")
 async def dashboard_state(request: Request) -> dict:
     return await get_dashboard_state(db=request.app.state.db, cache=request.app.state.cache)
+
+
+@router.websocket("/ws")
+async def dashboard_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
+    app = websocket.app
+    try:
+        while True:
+            state = await get_dashboard_state(db=app.state.db, cache=app.state.cache)
+            await websocket.send_json({"type": "state_update", "data": state})
+            try:
+                incoming = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
+                if incoming.get("type") == "request_brief":
+                    params = incoming.get("params", {})
+                    brief = await generate_situation_brief(
+                        region=params.get("region"),
+                        country=params.get("country"),
+                        hours_back=int(params.get("hours_back", 24)),
+                        db=app.state.db,
+                    )
+                    await websocket.send_json({"type": "brief", "data": brief})
+            except asyncio.TimeoutError:
+                continue
+    except WebSocketDisconnect:
+        return
