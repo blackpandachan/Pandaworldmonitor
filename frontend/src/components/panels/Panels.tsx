@@ -21,6 +21,14 @@ function timeAgo(iso: string): string {
   return `${Math.round(hrs / 24)}d ago`
 }
 
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length > 3)
+}
+
 export function ToplinePanel({ state }: { state: DashboardState | null }) {
   const articles = state?.articles ?? []
   const critical = articles.filter((a) => a.classification?.severity === 'critical').length
@@ -110,7 +118,13 @@ export function NewsPanel({ state }: { state: DashboardState | null }) {
   )
 }
 
-export function RiskPanel({ state }: { state: DashboardState | null }) {
+export function RiskPanel({
+  state,
+  onCountrySelect,
+}: {
+  state: DashboardState | null
+  onCountrySelect?: (countryCode: string) => void
+}) {
   return (
     <section className="card">
       <div className="card-head"><h3>Country Risk</h3><span>CII-like</span></div>
@@ -118,7 +132,7 @@ export function RiskPanel({ state }: { state: DashboardState | null }) {
         {(state?.risk_scores ?? []).map((r) => (
           <div key={r.country_code} className="risk-row">
             <div>
-              <strong>{r.country_code}</strong>
+              <button className="link-like" onClick={() => onCountrySelect?.(r.country_code)}>{r.country_code}</button>
               <small>{r.trend}</small>
             </div>
             <div className="risk-bar"><span style={{ width: `${Math.min(100, r.score)}%` }} /></div>
@@ -158,6 +172,16 @@ export function BriefHistoryPanel({
   onSelect: (slot: 0 | 1, id: number) => void
   comparison: BriefComparison | null | undefined
 }) {
+  const [detailId, setDetailId] = useState<number | null>(null)
+  const detailBrief = useMemo(() => items.find((item) => item.id === detailId) ?? null, [detailId, items])
+
+  const sharedTerms = useMemo(() => {
+    if (!comparison) return []
+    const first = new Set(tokenize(comparison.first.brief_text))
+    const second = new Set(tokenize(comparison.second.brief_text))
+    return Array.from(first).filter((term) => second.has(term)).slice(0, 24)
+  }, [comparison])
+
   return (
     <section className="card">
       <div className="card-head"><h3>Brief History & Compare</h3><span>{items.length}</span></div>
@@ -171,17 +195,53 @@ export function BriefHistoryPanel({
           {items.map((item) => <option key={`b-${item.id}`} value={item.id}>#{item.id} {item.type}</option>)}
         </select>
       </div>
+
+      <div className="brief-list">
+        {items.slice(0, 8).map((item) => (
+          <button key={item.id} className="brief-row" onClick={() => setDetailId(item.id)}>
+            <strong>#{item.id} {item.type}</strong>
+            <small>{timeAgo(item.generated_at)}</small>
+          </button>
+        ))}
+      </div>
+
       {comparison && (
         <div className="compare-box">
           <small>Shared terms: {comparison.summary.shared_terms}</small>
-          <p><strong>Added:</strong> {comparison.summary.added_terms.slice(0, 8).join(', ') || 'None'}</p>
-          <p><strong>Removed:</strong> {comparison.summary.removed_terms.slice(0, 8).join(', ') || 'None'}</p>
+          <div className="term-group">
+            <strong>Added</strong>
+            <div className="term-chips">
+              {comparison.summary.added_terms.slice(0, 16).map((term) => <span className="term-chip added" key={`a-${term}`}>+ {term}</span>)}
+            </div>
+          </div>
+          <div className="term-group">
+            <strong>Removed</strong>
+            <div className="term-chips">
+              {comparison.summary.removed_terms.slice(0, 16).map((term) => <span className="term-chip removed" key={`r-${term}`}>- {term}</span>)}
+            </div>
+          </div>
+          <div className="term-group">
+            <strong>Still prominent</strong>
+            <div className="term-chips">
+              {sharedTerms.map((term) => <span className="term-chip shared" key={`s-${term}`}>{term}</span>)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailBrief && (
+        <div className="brief-drawer">
+          <div className="card-head">
+            <h3>Brief #{detailBrief.id}</h3>
+            <button className="chip" onClick={() => setDetailId(null)}>Close</button>
+          </div>
+          <small>{detailBrief.type} • {detailBrief.country || detailBrief.region || 'global'} • {detailBrief.model} • {timeAgo(detailBrief.generated_at)}</small>
+          <p className="brief-text full">{detailBrief.brief_text}</p>
         </div>
       )}
     </section>
   )
 }
-
 
 export function InfrastructurePanel({ data }: { data: InfrastructureStatus | undefined }) {
   return (
@@ -202,7 +262,6 @@ export function InfrastructurePanel({ data }: { data: InfrastructureStatus | und
   )
 }
 
-
 export function WatchlistPanel({
   items,
   onAdd,
@@ -214,24 +273,32 @@ export function WatchlistPanel({
 }) {
   const [type, setType] = useState<WatchlistItem['type']>('country')
   const [value, setValue] = useState('')
+  const [severity, setSeverity] = useState<WatchlistItem['notify_severity']>('medium')
 
   return (
     <section className="card">
       <div className="card-head"><h3>Watchlist</h3><span>{items.length} tracked</span></div>
       <div className="watchlist-form">
-        <select value={type} onChange={(e) => setType(e.target.value as WatchlistItem['type'])}>
+        <select aria-label="watchlist type" value={type} onChange={(e) => setType(e.target.value as WatchlistItem['type'])}>
           <option value="country">Country</option>
           <option value="region">Region</option>
           <option value="topic">Topic</option>
           <option value="entity">Entity</option>
         </select>
-        <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="e.g. Ukraine" />
+        <input aria-label="watchlist value" value={value} onChange={(e) => setValue(e.target.value)} placeholder="e.g. Ukraine" />
+        <select aria-label="watchlist severity" value={severity} onChange={(e) => setSeverity(e.target.value as WatchlistItem['notify_severity'])}>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
         <button
           className="button"
           onClick={() => {
             if (!value.trim()) return
-            onAdd({ type, value: value.trim(), notify_severity: 'medium' })
+            onAdd({ type, value: value.trim(), notify_severity: severity })
             setValue('')
+            setSeverity('medium')
           }}
         >
           Add
@@ -240,7 +307,7 @@ export function WatchlistPanel({
       <div className="stack">
         {items.slice(0, 8).map((item) => (
           <div className="watch-item" key={`${item.type}-${item.value}`}>
-            <span>{item.type}: <strong>{item.value}</strong></span>
+            <span>{item.type}: <strong>{item.value}</strong> <small>({item.notify_severity})</small></span>
             <button className="chip" onClick={() => onRemove(item)}>Remove</button>
           </div>
         ))}
@@ -248,7 +315,6 @@ export function WatchlistPanel({
     </section>
   )
 }
-
 
 export function GdeltPanel({
   query,
