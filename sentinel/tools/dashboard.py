@@ -1,3 +1,7 @@
+import json
+from functools import lru_cache
+from pathlib import Path
+
 from sentinel.storage.db import SentinelDB
 from sentinel.tools.conflict import fetch_conflict_events
 from sentinel.tools.infrastructure import fetch_infrastructure_status
@@ -7,16 +11,52 @@ from sentinel.tools.news import fetch_news
 from sentinel.tools.watchlist import check_watchlist_alerts
 
 
+@lru_cache(maxsize=1)
+def _load_military_bases() -> list[dict]:
+    data_path = Path(__file__).resolve().parent.parent / "data" / "military_bases.json"
+    if not data_path.exists():
+        return []
+    try:
+        return json.loads(data_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+
+
 async def get_map_layer_data(layers: list[str], hours_back: int = 24, db: SentinelDB | None = None, cache=None) -> dict:
     payload: dict = {"layers": {}}
+
     if "conflicts" in layers:
-        payload["layers"]["conflicts"] = [e.model_dump(mode="json") for e in await fetch_conflict_events(days_back=max(1, hours_back // 24), db=db, cache=cache)]
+        payload["layers"]["conflicts"] = [
+            e.model_dump(mode="json")
+            for e in await fetch_conflict_events(days_back=max(1, hours_back // 24), db=db, cache=cache)
+        ]
+
     if "natural" in layers or "fires" in layers:
-        payload["layers"]["natural"] = [e.model_dump(mode="json") for e in await fetch_natural_events(days_back=max(1, hours_back // 24), db=db, cache=cache)]
+        events = await fetch_natural_events(days_back=max(1, hours_back // 24), db=db, cache=cache)
+        if "natural" in layers:
+            payload["layers"]["natural"] = [
+                event.model_dump(mode="json")
+                for event in events
+                if event.event_type != "wildfire"
+            ]
+        if "fires" in layers:
+            payload["layers"]["fires"] = [
+                event.model_dump(mode="json")
+                for event in events
+                if event.event_type == "wildfire"
+            ]
+
     if "news" in layers:
-        payload["layers"]["news"] = [a.model_dump(mode="json") for a in await fetch_news(max_age_hours=hours_back, db=db, cache=cache)]
+        payload["layers"]["news"] = [
+            a.model_dump(mode="json") for a in await fetch_news(max_age_hours=hours_back, db=db, cache=cache)
+        ]
+
     if "outages" in layers:
         payload["layers"]["outages"] = await fetch_infrastructure_status(cache=cache, db=db)
+
+    if "bases" in layers:
+        payload["layers"]["bases"] = _load_military_bases()
+
     return payload
 
 

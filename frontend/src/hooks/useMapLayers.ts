@@ -1,9 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 
-type LayerPayload = {
+export type LayerPayload = {
   layers: {
     conflicts?: Array<{ location: { latitude: number; longitude: number }; event_type: string }>
     natural?: Array<{ location: { latitude: number; longitude: number }; event_type: string }>
+    fires?: Array<{ location: { latitude: number; longitude: number }; event_type: string }>
+    bases?: Array<{ lat: number; lon: number; name: string; country?: string; type?: string }>
+    outages?: {
+      checks?: Record<string, { sample?: Record<string, unknown> }>
+    }
     news?: Array<{ location?: { latitude: number; longitude: number } | null; title: string }>
   }
 }
